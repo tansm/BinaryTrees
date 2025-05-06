@@ -16,16 +16,9 @@ public unsafe class NativePool<T> : IDisposable where T : unmanaged {
         _size = 0;
     }
 
-    public int Allocate() {
+    public T* Allocate() {
         if (_size >= _capacity) throw new InvalidOperationException("Buffer full");
-        int currentIndex = _size++;
-        _items[currentIndex] = default(T);
-        return currentIndex;
-    }
-
-    public ref T GetItem(int index) {
-        if (index < 0 || index >= _size) throw new ArgumentOutOfRangeException(nameof(index));
-        return ref _items[index];
+        return &_items[_size++];
     }
 
     public void Reset() => _size = 0;
@@ -37,13 +30,13 @@ public unsafe class NativePool<T> : IDisposable where T : unmanaged {
     }
 }
 
-public struct Node {
-    public int LeftIndex;
-    public int RightIndex;
+public unsafe struct Node {
+    public Node* Left;
+    public Node* Right;
 }
 
 public static class BinaryTrees {
-    public static void Run(int maxDepth) {
+    public unsafe static void Run(int maxDepth) {
         int minDepth = 4;
         int nodeCount = 1 << (maxDepth + 1); // Estimate max nodes
         using var pool = new NativePool<Node>(nodeCount);
@@ -51,7 +44,7 @@ public static class BinaryTrees {
 
         var stretchTree = longPool.CreateTree(maxDepth + 1);
         Console.WriteLine(string.Concat("stretch tree of depth ", maxDepth + 1,
-            "\t check: ", longPool.CheckTree(stretchTree)));
+            "\t check: ", CheckTree(stretchTree)));
 
         longPool.Reset();
         var longLivedTree = longPool.CreateTree(maxDepth);
@@ -62,30 +55,28 @@ public static class BinaryTrees {
 
             for (int i = 1; i <= iterations; i++) {
                 pool.Reset();
-                int root = pool.CreateTree(depth);
-                checkSum += pool.CheckTree(root);
+                var root = pool.CreateTree(depth);
+                checkSum += CheckTree(root);
             }
 
             Console.WriteLine($"{iterations}\t trees of depth {depth}\t check: {checkSum}");
         }
 
         Console.WriteLine(string.Concat("long lived tree of depth ", maxDepth,
-            "\t check: ", longPool.CheckTree(longLivedTree)));
+            "\t check: ", CheckTree(longLivedTree)));
     }
 
-    private static int CreateTree(this NativePool<Node> pool, int depth) {
-        if (depth <= 0) return -1;
-        int nodeIndex = pool.Allocate();
-        ref Node current = ref pool.GetItem(nodeIndex);
-        current.LeftIndex = pool.CreateTree(depth - 1);
-        current.RightIndex = pool.CreateTree(depth - 1);
-        return nodeIndex;
+    private unsafe static Node* CreateTree(this NativePool<Node> pool, int depth) {
+        if (depth <= 0) return null;
+        Node* current = pool.Allocate();
+        current->Left = pool.CreateTree(depth - 1);
+        current->Right = pool.CreateTree(depth - 1);
+        return current;
     }
 
-    private static int CheckTree(this NativePool<Node> pool, int nodeIndex) {
-        if (nodeIndex == -1) return 1;
-        ref Node node = ref pool.GetItem(nodeIndex);
-        return 1 + pool.CheckTree(node.LeftIndex) + pool.CheckTree(node.RightIndex);
+    private unsafe static int CheckTree(Node* node) {
+        if (node == null) return 1;
+        return 1 + CheckTree(node->Left) + CheckTree(node->Right);
     }
 }
 
